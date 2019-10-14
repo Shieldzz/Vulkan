@@ -1,0 +1,2 @@
+C:/VulkanSDK/1.1.114.0/Bin32/glslc.exe 00_minimal/BasicVertexShader.vert -o 00_minimal/BasicVertexShader.spv
+C:/VulkanSDK/1.1.114.0/Bin32/glslc.exe 00_minimal/BasicFragmentShader.frag -o 00_minimal/BasicFragmentShader.spv
