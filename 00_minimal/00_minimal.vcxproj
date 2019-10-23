@@ -71,15 +71,19 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
+    <TargetName>patate.exe</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
+    <TargetName>patate.exe</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
+    <TargetName>patate.exe</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
+    <TargetName>patate.exe</TargetName>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -99,8 +103,7 @@
       <Command>C:/VulkanSDK/1.1.114.0/Bin32/glslc.exe Shaders/VertexData.vert -o Shaders/VertexData.vert.spv
 C:/VulkanSDK/1.1.114.0/Bin32/glslc.exe Shaders/VertexData.frag -o Shaders/VertexData.frag.spv
 
-C:/VulkanSDK/1.1.114.0/Bin32/glslc.exe Shaders/Shadow.vert -o Shaders/Shadow.vert.spv
-C:/VulkanSDK/1.1.114.0/Bin32/glslc.exe Shaders/Shadow.frag -o Shaders/Shadow.frag.spv</Command>
+C:/VulkanSDK/1.1.114.0/Bin32/glslc.exe Shaders/Shadow.vert -o Shaders/Shadow.vert.spv</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -121,8 +124,7 @@ C:/VulkanSDK/1.1.114.0/Bin32/glslc.exe Shaders/Shadow.frag -o Shaders/Shadow.fra
       <Command>C:/VulkanSDK/1.1.114.0/Bin32/glslc.exe Shaders/VertexData.vert -o Shaders/VertexData.vert.spv
 C:/VulkanSDK/1.1.114.0/Bin32/glslc.exe Shaders/VertexData.frag -o Shaders/VertexData.frag.spv
 
-C:/VulkanSDK/1.1.114.0/Bin32/glslc.exe Shaders/Shadow.vert -o Shaders/Shadow.vert.spv
-C:/VulkanSDK/1.1.114.0/Bin32/glslc.exe Shaders/Shadow.frag -o Shaders/Shadow.frag.spv</Command>
+C:/VulkanSDK/1.1.114.0/Bin32/glslc.exe Shaders/Shadow.vert -o Shaders/Shadow.vert.spv</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -147,8 +149,7 @@ C:/VulkanSDK/1.1.114.0/Bin32/glslc.exe Shaders/Shadow.frag -o Shaders/Shadow.fra
       <Command>C:/VulkanSDK/1.1.114.0/Bin32/glslc.exe Shaders/VertexData.vert -o Shaders/VertexData.vert.spv
 C:/VulkanSDK/1.1.114.0/Bin32/glslc.exe Shaders/VertexData.frag -o Shaders/VertexData.frag.spv
 
-C:/VulkanSDK/1.1.114.0/Bin32/glslc.exe Shaders/Shadow.vert -o Shaders/Shadow.vert.spv
-C:/VulkanSDK/1.1.114.0/Bin32/glslc.exe Shaders/Shadow.frag -o Shaders/Shadow.frag.spv</Command>
+C:/VulkanSDK/1.1.114.0/Bin32/glslc.exe Shaders/Shadow.vert -o Shaders/Shadow.vert.spv</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -173,8 +174,7 @@ C:/VulkanSDK/1.1.114.0/Bin32/glslc.exe Shaders/Shadow.frag -o Shaders/Shadow.fra
       <Command>C:/VulkanSDK/1.1.114.0/Bin32/glslc.exe Shaders/VertexData.vert -o Shaders/VertexData.vert.spv
 C:/VulkanSDK/1.1.114.0/Bin32/glslc.exe Shaders/VertexData.frag -o Shaders/VertexData.frag.spv
 
-C:/VulkanSDK/1.1.114.0/Bin32/glslc.exe Shaders/Shadow.vert -o Shaders/Shadow.vert.spv
-C:/VulkanSDK/1.1.114.0/Bin32/glslc.exe Shaders/Shadow.frag -o Shaders/Shadow.frag.spv</Command>
+C:/VulkanSDK/1.1.114.0/Bin32/glslc.exe Shaders/Shadow.vert -o Shaders/Shadow.vert.spv</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>

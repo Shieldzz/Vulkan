@@ -10,6 +10,17 @@ layout(location = 0) out vec4 outColor;
 
 layout(binding = 1) uniform sampler2D texSampler;
 
+// SHADOW
+
+layout(set = 0, binding = 3) uniform sampler2D shadowMap;
+
+layout(location = 4) in vec3 v_light;
+layout(location = 5) in vec4 v_shadowCoord;
+
+#define ambient 0.1
+
+//
+
 // MATERIAU
 //const vec3 albedoRGB = vec3(0.6011, 0.10383, 0.7924);	// albedo = Cdiff, ici magenta
 //const vec3 Cdiff = vec3(255, 255, 0) * 1.0 / 255.0; 
@@ -75,12 +86,55 @@ vec3 CookTorranceGGX(vec3 f0, float NdotL, float NdotV, float NdotH, float VdotH
 // ce qui donne (roughness + 1)^2 / 8
 // mais attention, ca ne marche en IBL, trop sombre
 
+// SHADOW MAP 
+
+float textureProj(vec4 shadowCoord, vec2 off)
+{
+	float shadow = 1.0;
+	if ( shadowCoord.z > -1.0 && shadowCoord.z < 1.0 ) 
+	{
+		float dist = texture( shadowMap, shadowCoord.st + off).r;
+		if ( shadowCoord.w > 0.0 && dist < shadowCoord.z ) 
+		{
+			shadow = ambient;
+		}
+	}
+	return shadow;
+}
+
+float filterPCF(vec4 sc)
+{
+	ivec2 texDim = textureSize(shadowMap, 0);
+	float scale = 1.5;
+	float dx = scale * 1.0 / float(texDim.x);
+	float dy = scale * 1.0 / float(texDim.y);
+
+	float shadowFactor = 0.0;
+	int count = 0;
+	int range = 1;
+	
+	for (int x = -range; x <= range; x++)
+	{
+		for (int y = -range; y <= range; y++)
+		{
+			shadowFactor += textureProj(sc, vec2(dx*x, dy*y));
+			count++;
+		}
+	
+	}
+	return shadowFactor / count;
+}
+
+
 void main() 
 {
 	// LUMIERE : vecteur VERS la lumiere en repere main droite OpenGL (+Z vers nous)
-	const vec3 L = normalize(vec3(0.4, 0.8, 1.0));
+	//const vec3 L = normalize(vec3(0.0, 1.0, 0.0));
+	const vec3 L = v_light;
 
 	vec3 albedo = texture(texSampler, v_uv).rgb;
+
+	float shadow = filterPCF(v_shadowCoord / v_shadowCoord.w);
 
 	const vec3 f0 = GetF0(albedo,metallic);
 	
@@ -102,7 +156,7 @@ void main()
 	// diffuse = Lambert BRDF * cos0
 	//
 
-	vec3 diffuse = CalculeDiffuse(albedo) * NdotL;
+	vec3 diffuse = CalculeDiffuse(albedo) * NdotL * shadow;
 	
 	//
 	// specular = Gotanda BRDF * cos0 
@@ -133,5 +187,8 @@ void main()
 
 	vec3 finalColor = Kd * diffuse + specular ;
     outColor = vec4(finalColor, 1.0);
+
+	//float depth = texture(shadowMap, v_uv).r;
+	// = vec4(1.0 - (1.0 - depth) * 100.0);
 	
 }
