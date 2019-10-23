@@ -1257,7 +1257,7 @@ bool VulkanGraphicsApplication::Initialize()
 	}
 
 
-	m_graphiquePipeline.m_scene.m_meshes.resize(2);
+	m_graphiquePipeline.m_scene.m_meshes.resize(5);
 
 	GenerateSphere(m_graphiquePipeline.m_scene.m_meshes[0], 64, 64, 1.0f);
 	
@@ -1276,6 +1276,10 @@ bool VulkanGraphicsApplication::Initialize()
 	textureCube.CreateTextureSampler(m_context);
 */
 
+	GenerateSphere(m_graphiquePipeline.m_scene.m_meshes[2], 64, 64, 1.0f);
+	GenerateSphere(m_graphiquePipeline.m_scene.m_meshes[3], 64, 64, 1.0f);
+	GenerateSphere(m_graphiquePipeline.m_scene.m_meshes[4], 64, 64, 1.0f);
+
 	m_graphiquePipeline.CreateGraphiquePipeline(m_context, m_rendercontext);
 
 	Buffer::CreateUniformBuffers(m_context, sizeof(VP), 1, m_rendercontext.m_uniformBuffers, m_rendercontext.m_uniformBuffersMemory);
@@ -1290,6 +1294,17 @@ bool VulkanGraphicsApplication::Initialize()
 	cubeMesh.m_buffer.CreateVertexBuffer(m_context, sphereMesh.m_vertices);
 	cubeMesh.m_buffer.CreateIndexBuffer(m_context, sphereMesh.m_indices);
 
+	Mesh& sphereMesh3 = m_graphiquePipeline.m_scene.m_meshes[2];
+	sphereMesh3.m_buffer.CreateVertexBuffer(m_context, sphereMesh3.m_vertices);
+	sphereMesh3.m_buffer.CreateIndexBuffer(m_context, sphereMesh3.m_indices);
+
+	Mesh& sphereMesh4 = m_graphiquePipeline.m_scene.m_meshes[3];
+	sphereMesh4.m_buffer.CreateVertexBuffer(m_context, sphereMesh4.m_vertices);
+	sphereMesh4.m_buffer.CreateIndexBuffer(m_context, sphereMesh4.m_indices);
+
+	Mesh& sphereMesh5 = m_graphiquePipeline.m_scene.m_meshes[4];
+	sphereMesh5.m_buffer.CreateVertexBuffer(m_context, sphereMesh5.m_vertices);
+	sphereMesh5.m_buffer.CreateIndexBuffer(m_context, sphereMesh5.m_indices);
 
 	/*
 	VkDescriptorPoolSize poolSize[2] = {};
@@ -1379,19 +1394,19 @@ bool VulkanGraphicsApplication::Initialize()
 		{
 			// SHADOW TODO
 			shadowSampler.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-			shadowSampler.magFilter = VK_FILTER_LINEAR;
+			shadowSampler.magFilter = VK_FILTER_LINEAR; 
 			shadowSampler.minFilter = VK_FILTER_LINEAR;
 			shadowSampler.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-			shadowSampler.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 			shadowSampler.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 			shadowSampler.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+			shadowSampler.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 			shadowSampler.compareEnable = false;
 			shadowSampler.compareOp = VK_COMPARE_OP_ALWAYS;
 			shadowSampler.mipLodBias = 0.0f;
 			shadowSampler.maxAnisotropy = 1.0f;
 			shadowSampler.minLod = 0.0f;
 			shadowSampler.maxLod = 100.0f;
-			shadowSampler.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
+			shadowSampler.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
 		}
 
 		DEBUG_CHECK_VK(vkCreateSampler(m_context.m_device, &shadowSampler, nullptr, &shadowBuffer.m_shadowSampler));
@@ -2081,16 +2096,15 @@ bool VulkanGraphicsApplication::Display()
 	vp.lightPos.z = 25.0f + sin(glm::radians(time * 360.0f)) * 5.0f;*/
 	
 	
-	vp.lightPos.x = 0.0f;
+	vp.lightPos.x = 5.0f;
 	vp.lightPos.y = 5.0f;
-	vp.lightPos.z = -5.0f;
+	vp.lightPos.z = 0.0f;
 	
 	glm::mat4 depthProjectionMatrix = glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, 100.0f);
 	depthProjectionMatrix[1][1] *= -1.f;
 	glm::mat4 depthViewMatrix = glm::lookAt(vp.lightPos, glm::vec3(0.0f, 0.f, 0.f), glm::vec3(0.0f, 0.0f, -1.0f));
-	glm::mat4 depthModelMatrix = glm::mat4(1.0f);
 
-	vp.lightSpace = depthProjectionMatrix * depthViewMatrix * depthModelMatrix;
+	vp.lightSpace = depthProjectionMatrix * depthViewMatrix;
 
 
 	VkClearColorValue clearColor{ 0.55f, 0.55f, 0.55f, 1.0f };
@@ -2124,9 +2138,29 @@ bool VulkanGraphicsApplication::Display()
 
 		Model model = {};
 		//model.model = glm::rotate(glm::mat4(1.0f), (time * glm::radians(0.0f)), glm::vec(0.0f, 1.0f, 0.0f));
-		model.model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, idx * -2.0f, 0.0f));
-		if (idx > 0)
-			model.model = glm::scale(model.model, glm::vec3(3.0f, 0.2f, 3.0f));
+		if (idx == 0)
+			model.model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f));
+		else if (idx == 1)
+		{
+			model.model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -2.0f, 0.0f));
+			model.model = glm::scale(model.model, glm::vec3(5.0f, 0.2f, 5.0f));
+		}
+		else if (idx == 2)
+		{
+			model.model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -5.0f));
+			model.model = glm::scale(model.model, glm::vec3(5.0f, 5.0f, 0.2f));
+		}
+		else if (idx == 3)
+		{
+			model.model = glm::translate(glm::mat4(1.0f), glm::vec3(4.0f, 0.0f, 0.0f));
+			model.model = glm::scale(model.model, glm::vec3(0.2f, 3.0f, 3.0f));
+		}
+		else if (idx == 4)
+		{
+			model.model = glm::translate(glm::mat4(1.0f), glm::vec3(-4.0f, 0.0f, 0.0f));
+			model.model = glm::scale(model.model, glm::vec3(0.2f, 3.0f, 3.0f));
+		}
+
 
 		VkBuffer vertexBuffers[] = { mesh.m_buffer.m_vertexBuffer };
 		VkDeviceSize offsets[] = { 0 };
@@ -2176,9 +2210,28 @@ bool VulkanGraphicsApplication::Display()
 	
 		Model model = {};
 		//model.model = glm::rotate(glm::mat4(1.0f), (time * glm::radians(0.0f)), glm::vec(0.0f, 1.0f, 0.0f));
-		model.model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, idx * -2.0f, 0.0f));
-		if (idx > 0)
-			model.model = glm::scale( model.model, glm::vec3(3.0f,0.2f,3.0f));
+		if (idx == 0)
+			model.model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f));
+		else if (idx == 1)
+		{
+			model.model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -2.0f, 0.0f));
+			model.model = glm::scale(model.model, glm::vec3(5.0f, 0.5f, 5.0f));
+		}
+		else if (idx == 2)
+		{
+			model.model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -5.0f));
+			model.model = glm::scale(model.model, glm::vec3(5.0f, 5.0f, 0.5f));
+		}
+		else if (idx == 3)
+		{
+			model.model = glm::translate(glm::mat4(1.0f), glm::vec3(4.0f, 0.0f, 0.0f));
+			model.model = glm::scale(model.model, glm::vec3(0.5f, 3.0f, 3.0f));
+		}
+		else if (idx == 4)
+		{
+			model.model = glm::translate(glm::mat4(1.0f), glm::vec3(-4.0f, 0.0f, 0.0f));
+			model.model = glm::scale(model.model, glm::vec3(0.5f, 3.0f, 3.0f));
+		}
 
 		VkBuffer vertexBuffers[] = { mesh.m_buffer.m_vertexBuffer };
 		VkDeviceSize offsets[] = { 0 };

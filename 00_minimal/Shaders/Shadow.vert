@@ -21,5 +21,5 @@ layout(location = 2) in vec3 a_normal;
 void main()
 {
 	vec4 positionWS = model.world * vec4(a_position, 1.0);
-	gl_Position = ubo.lightSpace * vec4(a_position, 1.0);
+	gl_Position = ubo.lightSpace * positionWS;
 }

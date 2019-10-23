@@ -88,21 +88,23 @@ vec3 CookTorranceGGX(vec3 f0, float NdotL, float NdotV, float NdotH, float VdotH
 
 // SHADOW MAP 
 
-float textureProj(vec4 shadowCoord, vec2 off)
+// Hard Shadow
+float textureProj(vec4 shadowCoord, vec2 off, float NdotL)
 {
 	float shadow = 1.0;
-	if ( shadowCoord.z > -1.0 && shadowCoord.z < 1.0 ) 
+	if ( shadowCoord.z > -1.0 && shadowCoord.z < 1.0 ) // to avoid remap between 0 and 1
 	{
-		float dist = texture( shadowMap, shadowCoord.st + off).r;
-		if ( shadowCoord.w > 0.0 && dist < shadowCoord.z ) 
-		{
-			shadow = ambient;
-		}
+		float dist = texture( shadowMap, shadowCoord.xy + off).r;
+		if ( shadowCoord.w > 0.0 && shadowCoord.z - 0.005 > dist)
+			shadow = 0.0;
+		else
+			shadow = 1.0;
 	}
+
 	return shadow;
 }
 
-float filterPCF(vec4 sc)
+float filterPCF(vec4 sc, float NdotL)
 {
 	ivec2 texDim = textureSize(shadowMap, 0);
 	float scale = 1.5;
@@ -117,7 +119,7 @@ float filterPCF(vec4 sc)
 	{
 		for (int y = -range; y <= range; y++)
 		{
-			shadowFactor += textureProj(sc, vec2(dx*x, dy*y));
+			shadowFactor += textureProj(sc, vec2(dx*x, dy*y), NdotL);
 			count++;
 		}
 	
@@ -134,7 +136,6 @@ void main()
 
 	vec3 albedo = texture(texSampler, v_uv).rgb;
 
-	float shadow = filterPCF(v_shadowCoord / v_shadowCoord.w);
 
 	const vec3 f0 = GetF0(albedo,metallic);
 	
@@ -152,11 +153,17 @@ void main()
 	float VdotH = max(dot(V, H), 0.001);
 	float NdotV = max(dot(N, V), 0.001);
 
+	// Soft shadow PCF
+	float shadow = filterPCF(v_shadowCoord / v_shadowCoord.w, NdotL);
+	// Hard shadow
+	//float shadow = textureProj(v_shadowCoord / v_shadowCoord.w, vec2(0.0), NdotL);
+
+
 	//
 	// diffuse = Lambert BRDF * cos0
 	//
 
-	vec3 diffuse = CalculeDiffuse(albedo) * NdotL * shadow;
+	vec3 diffuse = CalculeDiffuse(albedo) * NdotL;
 	
 	//
 	// specular = Gotanda BRDF * cos0 
@@ -185,7 +192,7 @@ void main()
 	// Gotanda utilise la formulation suivante pour Kd :
 	vec3 Kd = vec3(1.0) - FresnelSchlick(f0, NdotL);
 
-	vec3 finalColor = Kd * diffuse + specular ;
+	vec3 finalColor = (Kd * diffuse + specular) * (albedo * 0.1 + shadow);
     outColor = vec4(finalColor, 1.0);
 
 	//float depth = texture(shadowMap, v_uv).r;
