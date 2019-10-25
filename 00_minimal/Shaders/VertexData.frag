@@ -6,20 +6,30 @@ layout(location = 1) in vec3 v_normal;
 layout(location = 2) in vec3 v_eyePosition;
 layout(location = 3) in vec2 v_uv;
 
+// COLOR
+
 layout(location = 0) out vec4 outColor;
 
 layout(binding = 1) uniform sampler2D texSampler;
 
+// ---------------------------------------------------------------------------
+
 // SHADOW
 
-layout(set = 0, binding = 3) uniform sampler2D shadowMap;
+layout(set = 0, binding = 3) uniform sampler2DArray shadowMap;
 
 layout(location = 4) in vec3 v_light;
 layout(location = 5) in vec4 v_shadowCoord;
 
 #define ambient 0.1
 
-//
+// ---------------------------------------------------------------------------
+
+// CASCADE SHADOW
+
+layout(location = 6) flat in uint v_cascadeIndex;
+
+// ---------------------------------------------------------------------------
 
 // MATERIAU
 //const vec3 albedoRGB = vec3(0.6011, 0.10383, 0.7924);	// albedo = Cdiff, ici magenta
@@ -30,6 +40,10 @@ const float perceptual_roughness = 0.5;
 const float roughness = perceptual_roughness * perceptual_roughness;
 const float metallic = 0.0;					// surface metallique ou pas ?
 const float reflectance = 1.0;
+
+// ---------------------------------------------------------------------------
+
+// LIGHT
 
 vec3 GetF0(vec3 albedo, float metallic)
 {
@@ -86,27 +100,29 @@ vec3 CookTorranceGGX(vec3 f0, float NdotL, float NdotV, float NdotH, float VdotH
 // ce qui donne (roughness + 1)^2 / 8
 // mais attention, ca ne marche en IBL, trop sombre
 
+// ---------------------------------------------------------------------------
+
 // SHADOW MAP 
 
 // Hard Shadow
-float textureProj(vec4 shadowCoord, vec2 off, float NdotL)
+float textureProj(vec4 shadowCoord, vec2 off, float NdotL, uint cascadeIndex)
 {
 	float shadow = 1.0;
 	if ( shadowCoord.z > -1.0 && shadowCoord.z < 1.0 ) // to avoid remap between 0 and 1
 	{
-		float dist = texture( shadowMap, shadowCoord.xy + off).r;
-		if ( shadowCoord.w > 0.0 && shadowCoord.z - 0.005 > dist)
+		float dist = texture( shadowMap, vec3(shadowCoord.xy + off, cascadeIndex)).r;
+		float bias = 0.005; // to avoid shadow acne
+		if ( shadowCoord.w > 0.0 && shadowCoord.z - bias > dist)
 			shadow = 0.0;
-		else
-			shadow = 1.0;
 	}
 
 	return shadow;
 }
 
-float filterPCF(vec4 sc, float NdotL)
+// Soft Shadow
+float filterPCF(vec4 sc, float NdotL, uint cascadeIndex)
 {
-	ivec2 texDim = textureSize(shadowMap, 0);
+	ivec2 texDim = textureSize(shadowMap, 0).xy;
 	float scale = 1.5;
 	float dx = scale * 1.0 / float(texDim.x);
 	float dy = scale * 1.0 / float(texDim.y);
@@ -119,7 +135,7 @@ float filterPCF(vec4 sc, float NdotL)
 	{
 		for (int y = -range; y <= range; y++)
 		{
-			shadowFactor += textureProj(sc, vec2(dx*x, dy*y), NdotL);
+			shadowFactor += textureProj(sc, vec2(dx*x, dy*y), NdotL, cascadeIndex);
 			count++;
 		}
 	
@@ -127,6 +143,7 @@ float filterPCF(vec4 sc, float NdotL)
 	return shadowFactor / count;
 }
 
+// ---------------------------------------------------------------------------
 
 void main() 
 {
@@ -154,9 +171,9 @@ void main()
 	float NdotV = max(dot(N, V), 0.001);
 
 	// Soft shadow PCF
-	float shadow = filterPCF(v_shadowCoord / v_shadowCoord.w, NdotL);
+	float shadow = filterPCF(v_shadowCoord / v_shadowCoord.w, NdotL, v_cascadeIndex);
 	// Hard shadow
-	//float shadow = textureProj(v_shadowCoord / v_shadowCoord.w, vec2(0.0), NdotL);
+	//float shadow = textureProj(v_shadowCoord / v_shadowCoord.w, vec2(0.0), NdotL, v_cascadeIndex);
 
 
 	//
@@ -193,9 +210,25 @@ void main()
 	vec3 Kd = vec3(1.0) - FresnelSchlick(f0, NdotL);
 
 	vec3 finalColor = (Kd * diffuse + specular) * (albedo * 0.1 + shadow);
-    outColor = vec4(finalColor, 1.0);
 
 	//float depth = texture(shadowMap, v_uv).r;
 	// = vec4(1.0 - (1.0 - depth) * 100.0);
+
+	switch(v_cascadeIndex) 
+	{
+		case 0 : 
+			finalColor *= vec3(0.0f, 1.0f, 0.0f);
+			break;
+		case 1 : 
+			finalColor *= vec3(1.f, 0.0f, 0.0f);
+			break;
+		case 2 : 
+			finalColor *= vec3(0.0f, 0.0f, 1.0f);
+			break;
+		case 3 : 
+			finalColor *= vec3(1.0f, 1.0f, 0.0f);
+			break;
+	}
 	
+    outColor = vec4(finalColor, 1.0);
 }

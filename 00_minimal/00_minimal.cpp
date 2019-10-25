@@ -29,6 +29,8 @@
 #define SHADOWMAP_DIM 2048
 #define SHADOWMAP_FILTER VK_FILTER_LINEAR
 
+#define SHADOWMAP_CASCADE 4
+
 #include "volk/volk.h"
 //#define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -142,13 +144,15 @@ struct VP
 	glm::mat4 view;
 	glm::mat4 proj;
 
-	glm::mat4 lightSpace;
+	glm::mat4 lightSpace[SHADOWMAP_CASCADE];
+	float cascadeSplits[SHADOWMAP_CASCADE];
 	glm::vec3 lightPos;
 };
 
 struct Model
 {
 	glm::mat4 model;
+	glm::vec4 cascadeIdx;
 };
 
 struct VulkanDeviceContext
@@ -222,7 +226,7 @@ struct VulkanDeviceContext
 		return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
 	}
 
-	void CreateImage(VkFormat format, VkImageTiling tiling, VkImageUsageFlags usageFlags, VkMemoryPropertyFlags properties, const VkExtent3D& extent, VkImage& image, VkDeviceMemory& imageMemory)
+	void CreateImage(VkFormat format, VkImageTiling tiling, VkImageUsageFlags usageFlags, VkMemoryPropertyFlags properties, const VkExtent3D& extent, int arrayLayers, VkImage& image, VkDeviceMemory& imageMemory)
 	{
 		VkImageCreateInfo imageInfo = {};
 		{
@@ -231,7 +235,7 @@ struct VulkanDeviceContext
 			imageInfo.flags = 0;
 			imageInfo.extent = extent;
 			imageInfo.mipLevels = 1;
-			imageInfo.arrayLayers = 1;
+			imageInfo.arrayLayers = arrayLayers;
 			imageInfo.format = format;
 			imageInfo.tiling = tiling;
 			imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -400,7 +404,7 @@ struct VulkanRenderContext
 	//// SHADOW ////
 	RenderSurface m_shadowBuffer;
 	VkRenderPass m_shadowRenderPass;
-	VkFramebuffer m_shadowFrameBuffer[PENDING_FRAMES];
+	VkFramebuffer m_shadowFrameBuffer;
 
 	std::vector<VkBuffer> m_shadowUniformBuffers;
 	std::vector<VkDeviceMemory> m_shadowUniformBuffersMemory;
@@ -690,6 +694,8 @@ struct Mesh
 	std::vector<Vertex> m_vertices;
 	std::vector<uint32_t> m_indices;
 
+	Model m_model;
+
 	Buffer m_buffer;
 
 	Texture m_texture;
@@ -698,6 +704,13 @@ struct Mesh
 struct Scene
 {
 	std::vector<Mesh> m_meshes;
+};
+
+struct Cascade
+{
+	VkFramebuffer		m_frameBuffer;
+	VkDescriptorSet		m_descriptorSet;
+	VkImageView			m_imageView;
 };
 
 struct VulkanGraphiquePipeline
@@ -719,6 +732,9 @@ struct VulkanGraphiquePipeline
 	VkDescriptorSetLayout m_shadowDescriptorSetLayout;
 	std::vector<VkDescriptorSet> m_shadowDescriptorSets;
 	VkPipeline m_pipelineShadow;
+
+	// CASCADE SHADOW
+	std::vector<Cascade>		m_cascades; 
 
 	std::vector<char> LoadingShader(const std::string& filename);
 	void CreateGraphiquePipeline(const VulkanDeviceContext& context, const VulkanRenderContext& renderContext);
@@ -1164,7 +1180,7 @@ bool VulkanGraphicsApplication::Initialize()
 	{
 		VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT; //LAZILY_ALLOCATED_BIT;
 		VkExtent3D extent = { m_context.m_swapchainExtent.width, m_context.m_swapchainExtent.height, 1 };
-		m_context.CreateImage(m_rendercontext.m_depthBuffer.m_format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, properties, extent, depthBuffer.m_image, depthBuffer.m_memory);
+		m_context.CreateImage(m_rendercontext.m_depthBuffer.m_format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, properties, extent, 1, depthBuffer.m_image, depthBuffer.m_memory);
 
 		VkImageViewCreateInfo viewInfo = {};
 		{
@@ -1260,7 +1276,8 @@ bool VulkanGraphicsApplication::Initialize()
 	m_graphiquePipeline.m_scene.m_meshes.resize(5);
 
 	GenerateSphere(m_graphiquePipeline.m_scene.m_meshes[0], 64, 64, 1.0f);
-	
+
+
 	/// Texture Mapping
 	Texture& textureSphere = m_graphiquePipeline.m_scene.m_meshes[0].m_texture;
 	textureSphere.CreateTextureColor(m_rendercontext, m_context);
@@ -1282,30 +1299,37 @@ bool VulkanGraphicsApplication::Initialize()
 
 	m_graphiquePipeline.CreateGraphiquePipeline(m_context, m_rendercontext);
 
-	Buffer::CreateUniformBuffers(m_context, sizeof(VP), 1, m_rendercontext.m_uniformBuffers, m_rendercontext.m_uniformBuffersMemory);
-	Buffer::CreateUniformBuffers(m_context, sizeof(Model), 100, m_rendercontext.m_uniformBuffersDynamic, m_rendercontext.m_uniformBuffersMemoryDynamic);
+	Buffer::CreateUniformBuffers(m_context, sizeof(VP), 1, m_rendercontext.m_uniformBuffers, m_rendercontext.m_uniformBuffersMemory); //
+	Buffer::CreateUniformBuffers(m_context, sizeof(Model), 1000, m_rendercontext.m_uniformBuffersDynamic, m_rendercontext.m_uniformBuffersMemoryDynamic); //Dynamic
 	
 	Mesh& sphereMesh = m_graphiquePipeline.m_scene.m_meshes[0];
 	sphereMesh.m_buffer.CreateVertexBuffer(m_context, sphereMesh.m_vertices);
 	sphereMesh.m_buffer.CreateIndexBuffer(m_context, sphereMesh.m_indices);
-	
+	sphereMesh.m_model.model = glm::translate(glm::mat4(1.0f), glm::vec3(3.0f, 0.0f, 4.0f));
 
 	Mesh& cubeMesh = m_graphiquePipeline.m_scene.m_meshes[1];
 	cubeMesh.m_buffer.CreateVertexBuffer(m_context, sphereMesh.m_vertices);
 	cubeMesh.m_buffer.CreateIndexBuffer(m_context, sphereMesh.m_indices);
+	cubeMesh.m_model.model = glm::translate(glm::mat4(1.0f), glm::vec3(3.0f, 0.0f, -10.0f));
+	//cubeMesh.m_model.model = glm::scale(cubeMesh.m_model.model, glm::vec3(4.0f, 4.f, 4.0f));
 
 	Mesh& sphereMesh3 = m_graphiquePipeline.m_scene.m_meshes[2];
 	sphereMesh3.m_buffer.CreateVertexBuffer(m_context, sphereMesh3.m_vertices);
 	sphereMesh3.m_buffer.CreateIndexBuffer(m_context, sphereMesh3.m_indices);
+	sphereMesh3.m_model.model = glm::translate(glm::mat4(1.0f), glm::vec3(1.0f, 0.0f, -20.0f));
+	//sphereMesh3.m_model.model = glm::scale(sphereMesh3.m_model.model, glm::vec3(4.0f, 4.0f, 4.f));
 
-	Mesh& sphereMesh4 = m_graphiquePipeline.m_scene.m_meshes[3];
-	sphereMesh4.m_buffer.CreateVertexBuffer(m_context, sphereMesh4.m_vertices);
-	sphereMesh4.m_buffer.CreateIndexBuffer(m_context, sphereMesh4.m_indices);
+	Mesh& sphereMesh6 = m_graphiquePipeline.m_scene.m_meshes[3];
+	sphereMesh6.m_buffer.CreateVertexBuffer(m_context, sphereMesh6.m_vertices);
+	sphereMesh6.m_buffer.CreateIndexBuffer(m_context, sphereMesh6.m_indices);
+	sphereMesh6.m_model.model = glm::translate(glm::mat4(1.0f), glm::vec3(-0.5f, 0.0f, 9.0f));
+	sphereMesh6.m_model.model = glm::scale(sphereMesh6.m_model.model, glm::vec3(0.2f, 0.2f, 0.2f));
 
-	Mesh& sphereMesh5 = m_graphiquePipeline.m_scene.m_meshes[4];
-	sphereMesh5.m_buffer.CreateVertexBuffer(m_context, sphereMesh5.m_vertices);
-	sphereMesh5.m_buffer.CreateIndexBuffer(m_context, sphereMesh5.m_indices);
-
+	Mesh& sphereMesh8 = m_graphiquePipeline.m_scene.m_meshes[4];
+	sphereMesh8.m_buffer.CreateVertexBuffer(m_context, sphereMesh8.m_vertices);
+	sphereMesh8.m_buffer.CreateIndexBuffer(m_context, sphereMesh8.m_indices);
+	sphereMesh8.m_model.model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -25.0f));
+	sphereMesh8.m_model.model = glm::scale(sphereMesh8.m_model.model, glm::vec3(100.0f, 100.0f, 0.1f));
 	/*
 	VkDescriptorPoolSize poolSize[2] = {};
 	{
@@ -1366,52 +1390,9 @@ bool VulkanGraphicsApplication::Initialize()
 	RenderSurface& shadowBuffer = m_rendercontext.m_shadowBuffer;
 	shadowBuffer.m_format = VK_FORMAT_D32_SFLOAT;
 	{
-		VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT; //LAZILY_ALLOCATED_BIT;
-		m_context.m_shadowExtent = { SHADOWMAP_DIM, SHADOWMAP_DIM, 1 };
-		m_context.CreateImage(m_rendercontext.m_shadowBuffer.m_format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, properties, m_context.m_shadowExtent, shadowBuffer.m_image, shadowBuffer.m_memory);
+		// --------------------------------------------------------------------------------
 
-		VkImageViewCreateInfo shadowViewInfo = {};
-		{
-			shadowViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-			shadowViewInfo.image = shadowBuffer.m_image;
-			shadowViewInfo.format = VK_FORMAT_D32_SFLOAT;
-			shadowViewInfo.components.r = VK_COMPONENT_SWIZZLE_R;
-			shadowViewInfo.components.g = VK_COMPONENT_SWIZZLE_G;
-			shadowViewInfo.components.b = VK_COMPONENT_SWIZZLE_B;
-			shadowViewInfo.components.a = VK_COMPONENT_SWIZZLE_A;
-			shadowViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-			shadowViewInfo.subresourceRange.baseMipLevel = 0;
-			shadowViewInfo.subresourceRange.levelCount = 1;
-			shadowViewInfo.subresourceRange.baseArrayLayer = 0;
-			shadowViewInfo.subresourceRange.layerCount = 1;
-			shadowViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-			shadowViewInfo.flags = 0;
-		}
-
-		DEBUG_CHECK_VK(vkCreateImageView(m_context.m_device, &shadowViewInfo, nullptr, &shadowBuffer.m_imageView));
-
-		VkSamplerCreateInfo shadowSampler = {};
-		{
-			// SHADOW TODO
-			shadowSampler.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-			shadowSampler.magFilter = VK_FILTER_LINEAR; 
-			shadowSampler.minFilter = VK_FILTER_LINEAR;
-			shadowSampler.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-			shadowSampler.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-			shadowSampler.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-			shadowSampler.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-			shadowSampler.compareEnable = false;
-			shadowSampler.compareOp = VK_COMPARE_OP_ALWAYS;
-			shadowSampler.mipLodBias = 0.0f;
-			shadowSampler.maxAnisotropy = 1.0f;
-			shadowSampler.minLod = 0.0f;
-			shadowSampler.maxLod = 100.0f;
-			shadowSampler.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
-		}
-
-		DEBUG_CHECK_VK(vkCreateSampler(m_context.m_device, &shadowSampler, nullptr, &shadowBuffer.m_shadowSampler));
-
-		///////////////////////// Descriptor /////////////////////////////
+		// SHADOW RENDERPASS
 		VkAttachmentDescription shadowAttachment = {};
 		{
 			shadowAttachment.format = VK_FORMAT_D32_SFLOAT;
@@ -1448,24 +1429,99 @@ bool VulkanGraphicsApplication::Initialize()
 
 		DEBUG_CHECK_VK(vkCreateRenderPass(m_context.m_device, &shadowRenderPassInfo, nullptr, &m_rendercontext.m_shadowRenderPass));
 
-		VkFramebufferCreateInfo shadowFramebufferInfo = {};
+		// --------------------------------------------------------------------------------
+
+		// SHADOW IMAGE 
+		VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT; //LAZILY_ALLOCATED_BIT;
+		m_context.m_shadowExtent = { SHADOWMAP_DIM, SHADOWMAP_DIM, 1 };
+		m_context.CreateImage(m_rendercontext.m_shadowBuffer.m_format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, properties, m_context.m_shadowExtent, SHADOWMAP_CASCADE, shadowBuffer.m_image, shadowBuffer.m_memory);
+
+		VkImageViewCreateInfo shadowViewInfo = {};
 		{
-			shadowFramebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-			shadowFramebufferInfo.renderPass = m_rendercontext.m_shadowRenderPass;
-			shadowFramebufferInfo.attachmentCount = 1;
-			shadowFramebufferInfo.pAttachments = &shadowBuffer.m_imageView;
-			shadowFramebufferInfo.width = m_context.m_shadowExtent.width;
-			shadowFramebufferInfo.height = m_context.m_shadowExtent.height;
-			shadowFramebufferInfo.layers = 1;
+			shadowViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+			shadowViewInfo.image = shadowBuffer.m_image;
+			shadowViewInfo.format = VK_FORMAT_D32_SFLOAT;
+			shadowViewInfo.components.r = VK_COMPONENT_SWIZZLE_R;
+			shadowViewInfo.components.g = VK_COMPONENT_SWIZZLE_G;
+			shadowViewInfo.components.b = VK_COMPONENT_SWIZZLE_B;
+			shadowViewInfo.components.a = VK_COMPONENT_SWIZZLE_A;
+			shadowViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+			shadowViewInfo.subresourceRange.baseMipLevel = 0;
+			shadowViewInfo.subresourceRange.levelCount = 1;
+			shadowViewInfo.subresourceRange.baseArrayLayer = 0;
+			shadowViewInfo.subresourceRange.layerCount = SHADOWMAP_CASCADE;
+			shadowViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+			shadowViewInfo.flags = 0;
 		}
 
-		VkImageView frameBufferAttachments[2] = { nullptr, m_rendercontext.m_shadowBuffer.m_imageView };
-		for (size_t idx = 0; idx < m_rendercontext.PENDING_FRAMES; idx++)
+		DEBUG_CHECK_VK(vkCreateImageView(m_context.m_device, &shadowViewInfo, nullptr, &shadowBuffer.m_imageView));
+
+		// -----------------------------------------------------------------------------------
+
+		
+		// nb of cascade (4 for now)
+		m_graphiquePipeline.m_cascades.resize(SHADOWMAP_CASCADE);
+		
+		// One image and frambuffer per cascade
+		for (uint32_t idxCascade = 0; idxCascade < SHADOWMAP_CASCADE; idxCascade++)
 		{
-			frameBufferAttachments[0] = m_context.m_swapChainImageViews[idx];
-			frameBufferCreateInfo.pAttachments = frameBufferAttachments;
-			DEBUG_CHECK_VK(vkCreateFramebuffer(m_context.m_device, &shadowFramebufferInfo, nullptr, &m_rendercontext.m_shadowFrameBuffer[idx]));
+			// ImageView -> inside shadowMap
+			VkImageViewCreateInfo cascadeViewInfo = {};
+			{
+				cascadeViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+				cascadeViewInfo.image = shadowBuffer.m_image;
+				cascadeViewInfo.format = shadowBuffer.m_format;
+				cascadeViewInfo.components.r = VK_COMPONENT_SWIZZLE_R;
+				cascadeViewInfo.components.g = VK_COMPONENT_SWIZZLE_G;
+				cascadeViewInfo.components.b = VK_COMPONENT_SWIZZLE_B;
+				cascadeViewInfo.components.a = VK_COMPONENT_SWIZZLE_A;
+				cascadeViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+				cascadeViewInfo.subresourceRange.baseMipLevel = 0;
+				cascadeViewInfo.subresourceRange.levelCount = 1;
+				cascadeViewInfo.subresourceRange.baseArrayLayer = idxCascade;
+				cascadeViewInfo.subresourceRange.layerCount = 1;
+				cascadeViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+				cascadeViewInfo.flags = 0;
+			}
+
+			DEBUG_CHECK_VK(vkCreateImageView(m_context.m_device, &cascadeViewInfo, nullptr, &m_graphiquePipeline.m_cascades[idxCascade].m_imageView));
+
+			VkFramebufferCreateInfo cascadeFramebufferInfo = {};
+			{
+				cascadeFramebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+				cascadeFramebufferInfo.renderPass = m_rendercontext.m_shadowRenderPass;
+				cascadeFramebufferInfo.attachmentCount = 1;
+				cascadeFramebufferInfo.pAttachments = &m_graphiquePipeline.m_cascades[idxCascade].m_imageView;
+				cascadeFramebufferInfo.width = m_context.m_shadowExtent.width;
+				cascadeFramebufferInfo.height = m_context.m_shadowExtent.height;
+				cascadeFramebufferInfo.layers = 1;
+			}
+
+			DEBUG_CHECK_VK(vkCreateFramebuffer(m_context.m_device, &cascadeFramebufferInfo, nullptr, &m_graphiquePipeline.m_cascades[idxCascade].m_frameBuffer));
 		}
+		
+		// -----------------------------------------------------------------------------------
+
+		VkSamplerCreateInfo shadowSampler = {};
+		{
+			// SHADOW TODO
+			shadowSampler.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+			shadowSampler.magFilter = VK_FILTER_LINEAR; 
+			shadowSampler.minFilter = VK_FILTER_LINEAR;
+			shadowSampler.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+			shadowSampler.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+			shadowSampler.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+			shadowSampler.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+			shadowSampler.compareEnable = false;
+			shadowSampler.compareOp = VK_COMPARE_OP_ALWAYS;
+			shadowSampler.mipLodBias = 0.0f;
+			shadowSampler.maxAnisotropy = 1.0f;
+			shadowSampler.minLod = 0.0f;
+			shadowSampler.maxLod = 100.0f;
+			shadowSampler.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+		}
+
+		DEBUG_CHECK_VK(vkCreateSampler(m_context.m_device, &shadowSampler, nullptr, &shadowBuffer.m_shadowSampler));
 
 		////////////////////////////// PIPELINES SHADOW ////////////////////////////////
 
@@ -1606,7 +1662,7 @@ bool VulkanGraphicsApplication::Initialize()
 		vkDestroyShaderModule(m_context.m_device, vertShaderModule, nullptr);
 
 		std::vector<VkDescriptorSetLayout> layoutShadow(m_context.SWAPCHAIN_IMAGES, m_graphiquePipeline.m_shadowDescriptorSetLayout);
-
+		
 		allocInfo.pSetLayouts = layoutShadow.data();
 	}
 	/////////////////////////// END SHADOW ////////////////////////////////////////
@@ -1668,6 +1724,7 @@ bool VulkanGraphicsApplication::Initialize()
 			descriptorWrite[2].descriptorCount = 1;
 			descriptorWrite[2].pBufferInfo = &bufferInfoDynamic;
 
+			// Shadow Sampler / same descriptor Set for Color and shadow
 			descriptorWrite[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 			descriptorWrite[3].dstSet = m_graphiquePipeline.m_descriptorSets[i];
 			descriptorWrite[3].dstBinding = 3;
@@ -2078,25 +2135,134 @@ bool VulkanGraphicsApplication::Display()
 	vkCmdPipelineBarrier(m_rendercontext.m_currCommandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0/*dependencyFlags*/, 0, nullptr, 0, nullptr, 1, &presentBarrier);
 #else
 
+	// ---------------------------------------------------------------------------------------------
+	// Update MVP And Light
 	static auto startTime = std::chrono::high_resolution_clock::now();
 	auto currTime = std::chrono::high_resolution_clock::now();
 	float time = std::chrono::duration<float, std::chrono::seconds::period>(currTime - startTime).count();
+
+	float nearClip = 0.1f;
+	float farClip = 100.0f;
+	float clipRange = farClip - nearClip;
+
+	float minZ = nearClip;
+	float maxZ = nearClip + clipRange;
+
+	float range = maxZ - minZ;
+	float ratio = maxZ / minZ;
 
 	VP vp = {};
 	//mvp.model = glm::rotate(glm::mat4(1.0f), (time * glm::radians(10.0f)), glm::vec3(0.0f,1.0f, 0.0f));
 	//mvp.model += glm::translate(mvp.model, position);
 
-
 	vp.view = glm::lookAt(glm::vec3(0.0f, 0.0f, 10.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 	vp.proj = glm::perspective(glm::radians(45.0f), m_context.m_swapchainExtent.width / (float)m_context.m_swapchainExtent.height, 0.1f, 100.0f);
 	vp.proj[1][1] *= -1.f;
+
+	vp.lightPos.x = 0.0f;
+	vp.lightPos.y = 0.0f;
+	vp.lightPos.z = 2.0f;
+
+	// Cascade
+
+	// Calculate split depths base on view camera frustum
+	// https://developer.nvidia.com/gpugems/GPUGems3/gpugems3_ch10.html
+	// https://github.com/SaschaWillems/Vulkan/blob/master/examples/shadowmappingcascade/shadowmappingcascade.cpp
+
+	float cascadeSplits[SHADOWMAP_CASCADE];
+	float size = static_cast<float>(SHADOWMAP_CASCADE);
+	float cascadeSplitLambda = 0.95f; // ?????
+
+	for (uint32_t idxSplit = 0; idxSplit < SHADOWMAP_CASCADE; idxSplit++)
+	{
+		float p = (idxSplit + 1) / size;
+		float log = minZ * std::pow(ratio,p);
+		float uniform = minZ + range * p;
+		float d = cascadeSplitLambda * (log - uniform) + uniform;
+		cascadeSplits[idxSplit] = (d - nearClip) / clipRange;
+	}
+
+	// Calculate ortho 
+	float lastSplitDist = 0.0f;
+	for (uint32_t idxSplitDist = 0; idxSplitDist < SHADOWMAP_CASCADE; idxSplitDist++)
+	{
+		float splitDist = cascadeSplits[idxSplitDist];
+
+		glm::vec3 frustumCorners[8] = {
+				glm::vec3(-1.0f,  1.0f, -1.0f),
+				glm::vec3(1.0f,  1.0f, -1.0f),
+				glm::vec3(1.0f, -1.0f, -1.0f),
+				glm::vec3(-1.0f, -1.0f, -1.0f),
+				glm::vec3(-1.0f,  1.0f,  1.0f),
+				glm::vec3(1.0f,  1.0f,  1.0f),
+				glm::vec3(1.0f, -1.0f,  1.0f),
+				glm::vec3(-1.0f, -1.0f,  1.0f),
+		};
+
+		// Project frustum corners into worldSpace
+		glm::mat4 invCam = glm::inverse(vp.proj * vp.view);
+
+		int frustumSize = 8;
+		for (uint32_t idxFrustum = 0; idxFrustum < frustumSize; idxFrustum++)
+		{
+			glm::vec4 invCorner = invCam * glm::vec4(frustumCorners[idxFrustum], 1.0f);
+			frustumCorners[idxFrustum] = invCorner / invCorner.w;
+		}
+
+		int halfFrustumSize = frustumSize / 2;
+		for (uint32_t idxFrustum = 0; idxFrustum < halfFrustumSize; idxFrustum++)
+		{
+			glm::vec3 dist = frustumCorners[halfFrustumSize + idxFrustum] - frustumCorners[idxFrustum];
+			frustumCorners[halfFrustumSize + idxFrustum] = frustumCorners[idxFrustum] + (dist * splitDist);
+			frustumCorners[idxFrustum] = frustumCorners[idxFrustum] + (dist * lastSplitDist);
+		}
+
+		// Get frustum center
+		glm::vec3 frustumCenter = glm::vec3(0.0f);
+		for (uint32_t idxCenter = 0; idxCenter < frustumSize; idxCenter++)
+			frustumCenter += frustumCorners[idxCenter];
+
+		frustumCenter /= frustumSize;
+
+		float radius = 0.0f;
+		for (uint32_t idxRadius = 0; idxRadius < frustumSize; idxRadius++)
+		{
+			float distance = glm::length(frustumCorners[idxRadius] - frustumCenter);
+			radius = glm::max(radius, distance);
+		}
+		radius = std::ceil(radius * 16.0f) / 16.0f; // ??? 2x size frustum???
+
+		glm::vec3 maxExtents = glm::vec3(radius);
+		glm::vec3 minExtents = -maxExtents;
+
+		// ONLY FOR DIRECTION LIGHT
+
+		glm::vec3 light = glm::normalize(-vp.lightPos);
+
+		//glm::mat4 lightProjectionMatrix = glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, 100.0f);
+		//lightProjectionMatrix[1][1] *= -1.f;
+		//vp.lightSpace = lightProjectionMatrix * lightViewMatrix;
+
+		glm::mat4 lightOrthoMatrix = glm::ortho(minExtents.x, maxExtents.x, minExtents.y, maxExtents.y, 0.0f, maxExtents.z - minExtents.z);
+		lightOrthoMatrix[1][1] *= -1;
+		glm::mat4 lightViewMatrix = glm::lookAt(
+												frustumCenter - light * -minExtents.z, 
+												frustumCenter, 
+												glm::vec3(0.0f, 1.0f, 0.0f));
+		
+		vp.cascadeSplits[idxSplitDist] = (nearClip + splitDist * clipRange) * -1.0f;
+		vp.lightSpace[idxSplitDist] = lightOrthoMatrix * lightViewMatrix;
+
+		lastSplitDist = cascadeSplits[idxSplitDist];
+	}
+
 
 	/*vp.lightPos.x = cos(glm::radians(time * 360.0f)) * 40.0f;
 	vp.lightPos.y = 50.0f + sin(glm::radians(time * 360.0f)) * 20.0f;
 	vp.lightPos.z = 25.0f + sin(glm::radians(time * 360.0f)) * 5.0f;*/
 	
 	
-	vp.lightPos.x = 5.0f;
+	/*vp.lightPos.x = 5.0f;
 	vp.lightPos.y = 5.0f;
 	vp.lightPos.z = 0.0f;
 	
@@ -2105,7 +2271,8 @@ bool VulkanGraphicsApplication::Display()
 	glm::mat4 depthViewMatrix = glm::lookAt(vp.lightPos, glm::vec3(0.0f, 0.f, 0.f), glm::vec3(0.0f, 0.0f, -1.0f));
 
 	vp.lightSpace = depthProjectionMatrix * depthViewMatrix;
-
+	*/
+	// ---------------------------------------------------------------------------------------------
 
 	VkClearColorValue clearColor{ 0.55f, 0.55f, 0.55f, 1.0f };
 	VkClearValue clearValues[2];
@@ -2118,64 +2285,47 @@ bool VulkanGraphicsApplication::Display()
 	{
 		shadowRenderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 		shadowRenderPassBeginInfo.renderPass = m_rendercontext.m_shadowRenderPass;
-		shadowRenderPassBeginInfo.framebuffer = m_rendercontext.m_shadowFrameBuffer[image_index];
+		//shadowRenderPassBeginInfo.framebuffer = m_rendercontext.m_shadowFrameBuffer;
 		shadowRenderPassBeginInfo.renderArea.extent.width = m_context.m_shadowExtent.width;
 		shadowRenderPassBeginInfo.renderArea.extent.height = m_context.m_shadowExtent.height;
 		shadowRenderPassBeginInfo.clearValueCount = 1;
 		shadowRenderPassBeginInfo.pClearValues = clearValues;
 	}
 
-	vkCmdBeginRenderPass(commandBuffer, &shadowRenderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-	//vkCmdSetDepthBias(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,m_graphiquePipeline.m_pipeline);
+	//vkCmdSetDepthBias(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,m_graphiquePipeline.m_pipelineShadow);
 	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,m_graphiquePipeline.m_pipelineShadow);
 
 	Buffer::UpdateUniformBuffer(m_context, image_index, sizeof(VP), 0, m_rendercontext.m_uniformBuffersMemory, &vp);
 	
-	for (size_t idx = 0; idx < m_graphiquePipeline.m_scene.m_meshes.size(); idx++)
+	for (size_t idxCascade = 0; idxCascade < SHADOWMAP_CASCADE; idxCascade++)
 	{
-		Mesh& mesh = m_graphiquePipeline.m_scene.m_meshes[idx];
+		// Update framebuffer for cascade framebuffer
+		shadowRenderPassBeginInfo.framebuffer = m_graphiquePipeline.m_cascades[idxCascade].m_frameBuffer;
+		vkCmdBeginRenderPass(commandBuffer, &shadowRenderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-		Model model = {};
-		//model.model = glm::rotate(glm::mat4(1.0f), (time * glm::radians(0.0f)), glm::vec(0.0f, 1.0f, 0.0f));
-		if (idx == 0)
-			model.model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f));
-		else if (idx == 1)
+		for (size_t idx = 0; idx < m_graphiquePipeline.m_scene.m_meshes.size(); idx++)
 		{
-			model.model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -2.0f, 0.0f));
-			model.model = glm::scale(model.model, glm::vec3(5.0f, 0.2f, 5.0f));
-		}
-		else if (idx == 2)
-		{
-			model.model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -5.0f));
-			model.model = glm::scale(model.model, glm::vec3(5.0f, 5.0f, 0.2f));
-		}
-		else if (idx == 3)
-		{
-			model.model = glm::translate(glm::mat4(1.0f), glm::vec3(4.0f, 0.0f, 0.0f));
-			model.model = glm::scale(model.model, glm::vec3(0.2f, 3.0f, 3.0f));
-		}
-		else if (idx == 4)
-		{
-			model.model = glm::translate(glm::mat4(1.0f), glm::vec3(-4.0f, 0.0f, 0.0f));
-			model.model = glm::scale(model.model, glm::vec3(0.2f, 3.0f, 3.0f));
-		}
+			#pragma region MESH
+			Mesh& mesh = m_graphiquePipeline.m_scene.m_meshes[idx];
+			mesh.m_model.cascadeIdx = glm::vec4(idxCascade);
+			#pragma endregion
 
+			uint32_t dynamicOffsets[] = { (idxCascade * m_graphiquePipeline.m_scene.m_meshes.size() +idx) * 256 };
+			Buffer::UpdateUniformBuffer(m_context, image_index, sizeof(Model), dynamicOffsets[0], m_rendercontext.m_uniformBuffersMemoryDynamic, &mesh.m_model);
 
-		VkBuffer vertexBuffers[] = { mesh.m_buffer.m_vertexBuffer };
-		VkDeviceSize offsets[] = { 0 };
-		uint32_t dynamicOffsets[] = { idx * 256 };
-		vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-		vkCmdBindIndexBuffer(commandBuffer, mesh.m_buffer.m_indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+			VkBuffer vertexBuffers[] = { mesh.m_buffer.m_vertexBuffer };
+			VkDeviceSize offsets[] = { 0 };
+			vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+			vkCmdBindIndexBuffer(commandBuffer, mesh.m_buffer.m_indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-	//	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphiquePipeline.m_pipelineLayout, 0, 1, &m_graphiquePipeline.m_descriptorSets[image_index], 1, dynamicOffsets);
-		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,m_graphiquePipeline.m_shadowPipelineLayout, 0, 1, &m_graphiquePipeline.m_descriptorSets[image_index], 1, dynamicOffsets);
-		Buffer::UpdateUniformBuffer(m_context, image_index, sizeof(Model), dynamicOffsets[0], m_rendercontext.m_uniformBuffersMemoryDynamic, &model);
+			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphiquePipeline.m_shadowPipelineLayout, 0, 1, &m_graphiquePipeline.m_descriptorSets[image_index], 1, dynamicOffsets);
+			
 
-		vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(mesh.m_indices.size()), 1, 0, 0, 0);
-		//vkCmdDraw(m_rendercontext.m_currCommandBuffer, static_cast<uint32_t>(vertices.size()) 1, 0, 0);
+			vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(mesh.m_indices.size()), 1, 0, 0, 0);
+		}
+		vkCmdEndRenderPass(commandBuffer);
 	}
-	vkCmdEndRenderPass(commandBuffer);
 	////////////////////// SHADOW RENDER PASS END //////////////////////////////////////
 
 
@@ -2207,35 +2357,13 @@ bool VulkanGraphicsApplication::Display()
 	for (size_t idx = 0; idx < m_graphiquePipeline.m_scene.m_meshes.size(); idx++)
 	{
 		Mesh& mesh = m_graphiquePipeline.m_scene.m_meshes[idx];
-	
-		Model model = {};
-		//model.model = glm::rotate(glm::mat4(1.0f), (time * glm::radians(0.0f)), glm::vec(0.0f, 1.0f, 0.0f));
-		if (idx == 0)
-			model.model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f));
-		else if (idx == 1)
-		{
-			model.model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -2.0f, 0.0f));
-			model.model = glm::scale(model.model, glm::vec3(5.0f, 0.5f, 5.0f));
-		}
-		else if (idx == 2)
-		{
-			model.model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -5.0f));
-			model.model = glm::scale(model.model, glm::vec3(5.0f, 5.0f, 0.5f));
-		}
-		else if (idx == 3)
-		{
-			model.model = glm::translate(glm::mat4(1.0f), glm::vec3(4.0f, 0.0f, 0.0f));
-			model.model = glm::scale(model.model, glm::vec3(0.5f, 3.0f, 3.0f));
-		}
-		else if (idx == 4)
-		{
-			model.model = glm::translate(glm::mat4(1.0f), glm::vec3(-4.0f, 0.0f, 0.0f));
-			model.model = glm::scale(model.model, glm::vec3(0.5f, 3.0f, 3.0f));
-		}
 
+		/*if (idx == 2)
+			mesh.m_model.model = glm::rotate(mesh.m_model.model, glm::radians(40.0f) * time, glm::vec3(1.0f, 0.0f, 0.0f));*/
+	
 		VkBuffer vertexBuffers[] = { mesh.m_buffer.m_vertexBuffer };
 		VkDeviceSize offsets[] = { 0 };
-		uint32_t dynamicOffsets[] = { idx * 256 };
+		uint32_t dynamicOffsets[] = { (20 + idx) * 256 };
 		
 		////// OPAQUE /////////
 		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphiquePipeline.m_pipelineLayout, 0, 1, &m_graphiquePipeline.m_descriptorSets[image_index], 1, dynamicOffsets);
@@ -2243,7 +2371,7 @@ bool VulkanGraphicsApplication::Display()
 		vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
 		vkCmdBindIndexBuffer(commandBuffer, mesh.m_buffer.m_indexBuffer ,0 ,VK_INDEX_TYPE_UINT32);
 	
-		Buffer::UpdateUniformBuffer(m_context, image_index, sizeof(Model), dynamicOffsets[0] ,m_rendercontext.m_uniformBuffersMemoryDynamic, &model);
+		Buffer::UpdateUniformBuffer(m_context, image_index, sizeof(Model), dynamicOffsets[0] ,m_rendercontext.m_uniformBuffersMemoryDynamic, &mesh.m_model);
 
 		vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(mesh.m_indices.size()), 1, 0, 0,0);
 		//vkCmdDraw(m_rendercontext.m_currCommandBuffer, static_cast<uint32_t>(vertices.size()) 1, 0, 0);
