@@ -1273,7 +1273,7 @@ bool VulkanGraphicsApplication::Initialize()
 	}
 
 
-	m_graphiquePipeline.m_scene.m_meshes.resize(5);
+	m_graphiquePipeline.m_scene.m_meshes.resize(3);
 
 	GenerateSphere(m_graphiquePipeline.m_scene.m_meshes[0], 64, 64, 1.0f);
 
@@ -1294,8 +1294,8 @@ bool VulkanGraphicsApplication::Initialize()
 */
 
 	GenerateSphere(m_graphiquePipeline.m_scene.m_meshes[2], 64, 64, 1.0f);
-	GenerateSphere(m_graphiquePipeline.m_scene.m_meshes[3], 64, 64, 1.0f);
-	GenerateSphere(m_graphiquePipeline.m_scene.m_meshes[4], 64, 64, 1.0f);
+	//GenerateSphere(m_graphiquePipeline.m_scene.m_meshes[3], 64, 64, 1.0f);
+	//GenerateSphere(m_graphiquePipeline.m_scene.m_meshes[4], 64, 64, 1.0f);
 
 	m_graphiquePipeline.CreateGraphiquePipeline(m_context, m_rendercontext);
 
@@ -1307,25 +1307,25 @@ bool VulkanGraphicsApplication::Initialize()
 	sphereMesh.m_buffer.CreateIndexBuffer(m_context, sphereMesh.m_indices);
 	sphereMesh.m_model.model = glm::translate(glm::mat4(1.0f), glm::vec3(3.0f, 0.0f, 4.0f));
 
-	Mesh& cubeMesh = m_graphiquePipeline.m_scene.m_meshes[1];
+	/*Mesh& cubeMesh = m_graphiquePipeline.m_scene.m_meshes[1];
 	cubeMesh.m_buffer.CreateVertexBuffer(m_context, sphereMesh.m_vertices);
 	cubeMesh.m_buffer.CreateIndexBuffer(m_context, sphereMesh.m_indices);
-	cubeMesh.m_model.model = glm::translate(glm::mat4(1.0f), glm::vec3(3.0f, 0.0f, -10.0f));
+	cubeMesh.m_model.model = glm::translate(glm::mat4(1.0f), glm::vec3(3.0f, 0.0f, -10.0f));*/
 	//cubeMesh.m_model.model = glm::scale(cubeMesh.m_model.model, glm::vec3(4.0f, 4.f, 4.0f));
 
-	Mesh& sphereMesh3 = m_graphiquePipeline.m_scene.m_meshes[2];
+	/*Mesh& sphereMesh3 = m_graphiquePipeline.m_scene.m_meshes[2];
 	sphereMesh3.m_buffer.CreateVertexBuffer(m_context, sphereMesh3.m_vertices);
 	sphereMesh3.m_buffer.CreateIndexBuffer(m_context, sphereMesh3.m_indices);
 	sphereMesh3.m_model.model = glm::translate(glm::mat4(1.0f), glm::vec3(1.0f, 0.0f, -20.0f));
 	//sphereMesh3.m_model.model = glm::scale(sphereMesh3.m_model.model, glm::vec3(4.0f, 4.0f, 4.f));
-
-	Mesh& sphereMesh6 = m_graphiquePipeline.m_scene.m_meshes[3];
+	*/
+	Mesh& sphereMesh6 = m_graphiquePipeline.m_scene.m_meshes[1];
 	sphereMesh6.m_buffer.CreateVertexBuffer(m_context, sphereMesh6.m_vertices);
 	sphereMesh6.m_buffer.CreateIndexBuffer(m_context, sphereMesh6.m_indices);
 	sphereMesh6.m_model.model = glm::translate(glm::mat4(1.0f), glm::vec3(-0.5f, 0.0f, 9.0f));
 	sphereMesh6.m_model.model = glm::scale(sphereMesh6.m_model.model, glm::vec3(0.2f, 0.2f, 0.2f));
 
-	Mesh& sphereMesh8 = m_graphiquePipeline.m_scene.m_meshes[4];
+	Mesh& sphereMesh8 = m_graphiquePipeline.m_scene.m_meshes[2];
 	sphereMesh8.m_buffer.CreateVertexBuffer(m_context, sphereMesh8.m_vertices);
 	sphereMesh8.m_buffer.CreateIndexBuffer(m_context, sphereMesh8.m_indices);
 	sphereMesh8.m_model.model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -25.0f));
@@ -2142,7 +2142,7 @@ bool VulkanGraphicsApplication::Display()
 	float time = std::chrono::duration<float, std::chrono::seconds::period>(currTime - startTime).count();
 
 	float nearClip = 0.1f;
-	float farClip = 100.0f;
+	float farClip = 5.0f;
 	float clipRange = farClip - nearClip;
 
 	float minZ = nearClip;
@@ -2311,7 +2311,7 @@ bool VulkanGraphicsApplication::Display()
 			mesh.m_model.cascadeIdx = glm::vec4(idxCascade);
 			#pragma endregion
 
-			uint32_t dynamicOffsets[] = { (idxCascade * m_graphiquePipeline.m_scene.m_meshes.size() +idx) * 256 };
+			uint32_t dynamicOffsets[] = { (idxCascade * m_graphiquePipeline.m_scene.m_meshes.size() + idx) * 256 };
 			Buffer::UpdateUniformBuffer(m_context, image_index, sizeof(Model), dynamicOffsets[0], m_rendercontext.m_uniformBuffersMemoryDynamic, &mesh.m_model);
 
 			VkBuffer vertexBuffers[] = { mesh.m_buffer.m_vertexBuffer };
