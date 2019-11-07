@@ -69,6 +69,7 @@ void main()
 	}*/
 
 	v_light = normalize(ubo.lightPos - a_position);
+	//v_light = normalize(ubo.lightPos);
 	v_shadowCoord = (biasMat * ubo.lightSpace[v_cascadeIndex]) * positionWS;
 
 	gl_Position = ubo.proj * ubo.view * positionWS;

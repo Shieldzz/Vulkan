@@ -23,7 +23,7 @@
 #define VULKAN_ENABLE_VALIDATION
 #endif
 
-#define GLM_FORCE_RADIANS
+//#define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 
 #define SHADOWMAP_DIM 2048
@@ -1261,8 +1261,8 @@ bool VulkanGraphicsApplication::Initialize()
 	frameBufferCreateInfo.renderPass = m_rendercontext.m_renderPass;
 	frameBufferCreateInfo.layers = 1;
 	frameBufferCreateInfo.attachmentCount = 2;
-	frameBufferCreateInfo.height = 600;
-	frameBufferCreateInfo.width = 800;
+	frameBufferCreateInfo.height = 720;
+	frameBufferCreateInfo.width = 1280;
 
 	VkImageView frameBufferAttachments[2] = { nullptr,m_rendercontext.m_depthBuffer.m_imageView };
 	for (int frameBufferIdx = 0; frameBufferIdx < m_rendercontext.PENDING_FRAMES; ++frameBufferIdx)
@@ -1305,7 +1305,7 @@ bool VulkanGraphicsApplication::Initialize()
 	Mesh& sphereMesh = m_graphiquePipeline.m_scene.m_meshes[0];
 	sphereMesh.m_buffer.CreateVertexBuffer(m_context, sphereMesh.m_vertices);
 	sphereMesh.m_buffer.CreateIndexBuffer(m_context, sphereMesh.m_indices);
-	sphereMesh.m_model.model = glm::translate(glm::mat4(1.0f), glm::vec3(3.0f, 0.0f, 4.0f));
+	sphereMesh.m_model.model = glm::translate(glm::mat4(1.0f), glm::vec3(-2.0f, 0.0f, 0.0f));
 
 	/*Mesh& cubeMesh = m_graphiquePipeline.m_scene.m_meshes[1];
 	cubeMesh.m_buffer.CreateVertexBuffer(m_context, sphereMesh.m_vertices);
@@ -2142,7 +2142,7 @@ bool VulkanGraphicsApplication::Display()
 	float time = std::chrono::duration<float, std::chrono::seconds::period>(currTime - startTime).count();
 
 	float nearClip = 0.1f;
-	float farClip = 5.0f;
+	float farClip = 1000.0f;
 	float clipRange = farClip - nearClip;
 
 	float minZ = nearClip;
@@ -2155,8 +2155,8 @@ bool VulkanGraphicsApplication::Display()
 	//mvp.model = glm::rotate(glm::mat4(1.0f), (time * glm::radians(10.0f)), glm::vec3(0.0f,1.0f, 0.0f));
 	//mvp.model += glm::translate(mvp.model, position);
 
-	vp.view = glm::lookAt(glm::vec3(0.0f, 0.0f, 10.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-	vp.proj = glm::perspective(glm::radians(45.0f), m_context.m_swapchainExtent.width / (float)m_context.m_swapchainExtent.height, 0.1f, 100.0f);
+	vp.view = glm::lookAt(glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+	vp.proj = glm::perspective(glm::radians(45.0f), (float)m_context.m_swapchainExtent.width / (float)m_context.m_swapchainExtent.height, 0.1f, 1000.0f);
 	vp.proj[1][1] *= -1.f;
 
 	vp.lightPos.x = 0.0f;
@@ -2426,7 +2426,7 @@ int main(void)
 	VulkanGraphicsApplication app;
 
 	/* Create a windowed mode window and its OpenGL context */
-	app.m_window = glfwCreateWindow(800, 600, "00_minimal", NULL, NULL);
+	app.m_window = glfwCreateWindow(1280, 720, "00_minimal", NULL, NULL);
 	if (!app.m_window)
 	{
 		glfwTerminate();
